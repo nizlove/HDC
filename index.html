@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reconocimiento de Voz + Hoja de Cálculo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .btn {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin: 5px 0;
+    }
+    .btn:disabled {
+      background-color: #ddd;
+      cursor: not-allowed;
+    }
+    .excel-table {
+      margin-top: 20px;
+      border-collapse: collapse;
+      width: 100%;
+      border: 2px solid #9EB6CE;
+      font-size: 14px;
+    }
+    .excel-table th, .excel-table td {
+      border: 1px solid #9EB6CE;
+      padding: 8px;
+      text-align: center;
+    }
+    .excel-table th {
+      background-color: #DCE6F1;
+    }
+    .delete-btn {
+      color: red;
+      cursor: pointer;
+      font-weight: bold;
+      padding: 0 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Reconocimiento de Voz - Hoja de cálculo</h1>
+
+  <button id="startBtn" class="btn">Iniciar Reconocimiento</button>
+  <button id="exportBtn" class="btn">Descargar CSV</button>
+
+  <table class="excel-table" id="tablaExcel">
+    <thead>
+      <tr>
+        <th>Coche</th>
+        <th>Destino</th>
+        <th>Pasajeros</th>
+        <th>Hora</th>
+        <th>Eliminar</th>
+      </tr>
+    </thead>
+    <tbody id="bodyTabla">
+      <!-- Las filas dinámicas se agregarán aquí -->
+    </tbody>
+  </table>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const bodyTabla = document.getElementById('bodyTabla');
+
+    let recognition = null;
+
+    // Fila temporal y datos actuales
+    let filaActual = ["", "", ""]; // Campos: Coche, Destino, Pasajeros
+
+    // Verificar compatibilidad con Web Speech API
+    if ('webkitSpeechRecognition' in window) {
+      recognition = new webkitSpeechRecognition();
+      recognition.lang = 'es-ES';
+      recognition.continuous = true; // Permitir flujo continuo
+      recognition.interimResults = false; // Solo resultados finales
+    } else {
+      alert("Tu navegador no soporta Web Speech API");
+    }
+
+    // Guardar los datos en la tabla
+    function guardarFila() {
+      const nuevaFila = document.createElement('tr');
+
+      // Agregar los valores de la fila actual
+      filaActual.forEach(valor => {
+        const celda = document.createElement('td');
+        celda.textContent = valor || "N/A"; // Si no hay valor, poner "N/A"
+        nuevaFila.appendChild(celda);
+      });
+
+      // Agregar la hora actual
+      const celdaHora = document.createElement('td');
+      celdaHora.textContent = new Date().toLocaleTimeString();
+      nuevaFila.appendChild(celdaHora);
+
+      // Agregar la columna para eliminar (X)
+      const celdaEliminar = document.createElement('td');
+      const eliminarBtn = document.createElement('span');
+      eliminarBtn.textContent = 'X';
+      eliminarBtn.classList.add('delete-btn');
+      eliminarBtn.onclick = () => eliminarFila(nuevaFila); // Asociamos la función de eliminar
+      celdaEliminar.appendChild(eliminarBtn);
+      nuevaFila.appendChild(celdaEliminar);
+
+      // Añadir la nueva fila a la tabla
+      bodyTabla.appendChild(nuevaFila);
+
+      // Reiniciar fila para un nuevo registro
+      filaActual = ["", "", ""];
+    }
+
+    // Función para eliminar una fila
+    function eliminarFila(fila) {
+      fila.remove();
+    }
+
+    // Manejo de la transcripción de la voz
+    recognition.onresult = (event) => {
+      const result = event.results[event.resultIndex];
+      if (result.isFinal) {
+        let transcript = result[0].transcript.trim().toLowerCase();
+
+        // Separar los datos según "por" y "con"
+        if (transcript.includes("por")) {
+          const partes = transcript.split(/por|con/).map(part => part.trim());
+
+          // Manejamos entrada corta (Coche y Destino) o completa
+          filaActual[0] = partes[0].replace("coche", "").trim(); // Coche
+          filaActual[1] = partes[1] || "N/A"; // Destino
+          filaActual[2] = partes[2]?.replace(/pasajeros/, "").trim() || "N/A"; // Pasajeros, si existe
+
+          guardarFila(); // Guardar los datos en la tabla
+        }
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Error en el reconocimiento:", event.error);
+      // No interrumpir el flujo, solo registrar el error en la consola
+    };
+
+    recognition.onend = () => {
+      recognition.start(); // Continuar escuchando automáticamente
+    };
+
+    // Iniciar reconocimiento de voz
+    startBtn.addEventListener('click', () => {
+      if (recognition) {
+        recognition.start(); // Comienza el reconocimiento
+      }
+    });
+
+    // Exportar la tabla a CSV
+    exportBtn.addEventListener('click', () => {
+      const filas = document.querySelectorAll("#tablaExcel tr");
+      let csvContent = [];
+
+      filas.forEach(fila => {
+        const celdas = fila.querySelectorAll("th, td");
+        let rowData = Array.from(celdas).map(celda => celda.innerText.replace(/"/g, '""'));
+        csvContent.push(rowData.join(","));
+      });
+
+      const csvString = csvContent.join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "registros.csv";
+      link.click();
+    });
+  </script>
+</body>
+</html>
