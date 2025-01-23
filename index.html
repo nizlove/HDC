@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Reconocimiento de Voz + Hoja de Cálculo</title>
   <style>
     body {
@@ -46,7 +46,8 @@
 <body>
   <h1>Reconocimiento de Voz - Hoja de cálculo</h1>
 
-  <button id="startBtn" class="btn">Iniciar Reconocimiento</button>
+  <!-- Botón para grabar mientras se mantiene presionado -->
+  <button id="startBtn" class="btn">Mantener presionado para hablar</button>
   <button id="exportBtn" class="btn">Descargar CSV</button>
 
   <table class="excel-table" id="tablaExcel">
@@ -71,100 +72,126 @@
 
     let recognition = null;
 
-    // Fila temporal y datos actuales
-    let filaActual = ["", "", ""]; // Campos: Coche, Destino, Pasajeros
+    // Para saber si el botón sigue presionado y así re-iniciar si se corta
+    let isPressed = false;
+
+    // Fila temporal: [Coche, Destino, Pasajeros]
+    let filaActual = ["", "", ""]; 
 
     // Verificar compatibilidad con Web Speech API
     if ('webkitSpeechRecognition' in window) {
       recognition = new webkitSpeechRecognition();
       recognition.lang = 'es-ES';
-      recognition.continuous = true; // Permitir flujo continuo
+      recognition.continuous = true;      // Permitir flujo continuo
       recognition.interimResults = false; // Solo resultados finales
     } else {
-      alert("Tu navegador no soporta Web Speech API");
+      alert("Tu navegador no soporta Web Speech API. Usa Chrome o uno compatible.");
     }
 
     // Guardar los datos en la tabla
     function guardarFila() {
       const nuevaFila = document.createElement('tr');
 
-      // Agregar los valores de la fila actual
+      // Coche, Destino, Pasajeros
       filaActual.forEach(valor => {
         const celda = document.createElement('td');
-        celda.textContent = valor || "N/A"; // Si no hay valor, poner "N/A"
+        celda.textContent = valor || "N/A";
         nuevaFila.appendChild(celda);
       });
 
-      // Agregar la hora actual
+      // Agregar hora actual
       const celdaHora = document.createElement('td');
       celdaHora.textContent = new Date().toLocaleTimeString();
       nuevaFila.appendChild(celdaHora);
 
-      // Agregar la columna para eliminar (X)
+      // Columna "Eliminar"
       const celdaEliminar = document.createElement('td');
       const eliminarBtn = document.createElement('span');
       eliminarBtn.textContent = 'X';
       eliminarBtn.classList.add('delete-btn');
-      eliminarBtn.onclick = () => eliminarFila(nuevaFila); // Asociamos la función de eliminar
+      eliminarBtn.onclick = () => nuevaFila.remove();
       celdaEliminar.appendChild(eliminarBtn);
       nuevaFila.appendChild(celdaEliminar);
 
-      // Añadir la nueva fila a la tabla
+      // Insertar fila en el <tbody>
       bodyTabla.appendChild(nuevaFila);
 
-      // Reiniciar fila para un nuevo registro
+      // Reset de la fila para la próxima
       filaActual = ["", "", ""];
     }
 
-    // Función para eliminar una fila
-    function eliminarFila(fila) {
-      fila.remove();
+    // Procesar la transcripción de voz
+    if (recognition) {
+      recognition.onresult = (event) => {
+        // Tomamos el resultado en el índice actual
+        const result = event.results[event.resultIndex];
+        if (result.isFinal) {
+          let transcript = result[0].transcript.trim().toLowerCase();
+          console.log("Texto final reconocido:", transcript);
+
+          // Si incluye "por", separamos en partes
+          if (transcript.includes("por")) {
+            // "coche audi por madrid con 2 pasajeros"
+            const partes = transcript.split(/por|con/).map(part => part.trim());
+
+            // Coche (quitamos la palabra "coche" si está)
+            filaActual[0] = partes[0].replace("coche", "").trim() || "N/A";
+            // Destino
+            filaActual[1] = partes[1] || "N/A";
+            // Pasajeros
+            filaActual[2] = partes[2]?.replace(/pasajeros/, "").trim() || "N/A";
+
+            guardarFila();
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Error en el reconocimiento:", event.error);
+      };
+
+      // Cuando se detiene (p.ej. por silencio), re-iniciamos si el botón aún está presionado
+      recognition.onend = () => {
+        console.log("Reconocimiento de voz (onend). Se detuvo.");
+        if (isPressed) {
+          // Si aún mantenemos el botón, se reinicia
+          console.log("El botón sigue presionado: reiniciamos reconocimiento.");
+          recognition.start();
+        }
+      };
     }
 
-    // Manejo de la transcripción de la voz
-    recognition.onresult = (event) => {
-      const result = event.results[event.resultIndex];
-      if (result.isFinal) {
-        let transcript = result[0].transcript.trim().toLowerCase();
-
-        // Separar los datos según "por" y "con"
-        if (transcript.includes("por")) {
-          const partes = transcript.split(/por|con/).map(part => part.trim());
-
-          // Manejamos entrada corta (Coche y Destino) o completa
-          filaActual[0] = partes[0].replace("coche", "").trim(); // Coche
-          filaActual[1] = partes[1] || "N/A"; // Destino
-          filaActual[2] = partes[2]?.replace(/pasajeros/, "").trim() || "N/A"; // Pasajeros, si existe
-
-          guardarFila(); // Guardar los datos en la tabla
-        }
-      }
-    };
-
-    recognition.onerror = (event) => {
-      console.error("Error en el reconocimiento:", event.error);
-      // No interrumpir el flujo, solo registrar el error en la consola
-    };
-
-    recognition.onend = () => {
-      recognition.start(); // Continuar escuchando automáticamente
-    };
-
-    // Iniciar reconocimiento de voz
-    startBtn.addEventListener('click', () => {
+    // Al presionar (mantener) el botón:
+    startBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();  // Evitar el click "normal"
       if (recognition) {
-        recognition.start(); // Comienza el reconocimiento
+        isPressed = true;
+        recognition.start();
+        console.log("Grabando... (Mantén presionado)");
       }
     });
 
-    // Exportar la tabla a CSV
+    // Al soltar el botón, detenemos la grabación
+    startBtn.addEventListener('pointerup', (e) => {
+      e.preventDefault();
+      if (recognition) {
+        isPressed = false;
+        recognition.stop();
+        console.log("Botón soltado, reconocimiento detenido.");
+      }
+    });
+
+    // Exportar a CSV
     exportBtn.addEventListener('click', () => {
       const filas = document.querySelectorAll("#tablaExcel tr");
       let csvContent = [];
 
       filas.forEach(fila => {
         const celdas = fila.querySelectorAll("th, td");
-        let rowData = Array.from(celdas).map(celda => celda.innerText.replace(/"/g, '""'));
+        let rowData = Array.from(celdas).map(celda => {
+          // Escapamos comillas internas
+          return '"' + celda.innerText.replace(/"/g, '""') + '"';
+        });
         csvContent.push(rowData.join(","));
       });
 
